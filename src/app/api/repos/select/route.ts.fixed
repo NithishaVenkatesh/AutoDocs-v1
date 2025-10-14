@@ -1,0 +1,265 @@
+import { auth } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/clerk-sdk-node";
+import { NextResponse } from "next/server";
+import { Client } from "@neondatabase/serverless";
+import { generateDocumentation } from "@/lib/pocketflow";
+
+// Helper function to handle database connections
+async function withDatabase<T>(callback: (db: Client) => Promise<T>): Promise<T> {
+  const db = new Client(process.env.DATABASE_URL || '');
+  try {
+    await db.connect();
+    return await callback(db);
+  } finally {
+    await db.end().catch(console.error);
+  }
+}
+
+// Helper function to run documentation generation in the background
+async function triggerDocumentationGeneration(repo: any) {
+  const startTime = Date.now();
+  const logId = `[${new Date().toISOString()}] [Repo: ${repo.full_name || repo.name}]`;
+  
+  try {
+    console.log(`\n${logId} Starting documentation generation`);
+    console.log(`${logId} Repository: ${repo.full_name || repo.name}`);
+    console.log(`${logId} URL: ${repo.html_url || repo.clone_url}`);
+    
+    const result = await generateDocumentation(repo.clone_url || repo.html_url);
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    
+    if (result.success) {
+      console.log(`\n${logId} Documentation generated successfully in ${duration}s`);
+      console.log(`${logId} Merkle root: ${result.merkleRoot || 'N/A'}`);
+      if (result.fileHashes) {
+        console.log(`${logId} Files hashed: ${result.fileHashes.length}`);
+      }
+    } else {
+      console.error(`\n${logId} Documentation generation failed after ${duration}s`);
+      console.error(`${logId} Error: ${result.error || 'Unknown error'}`);
+    }
+    
+    // Update the repository status in the database
+    await withDatabase(async (db) => {
+      await db.query(
+        'UPDATE repos SET last_doc_gen = $1, doc_gen_status = $2 WHERE id = $3',
+        [new Date(), result.success ? 'success' : 'failed', repo.id]
+      );
+    }).catch(console.error);
+    
+    return result;
+  } catch (error) {
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.error(`\n${logId} Fatal error after ${duration}s:`, error);
+    
+    // Log the error to the database
+    await withDatabase(async (db) => {
+      await db.query(
+        'UPDATE repos SET last_doc_gen = $1, doc_gen_status = $2, last_error = $3 WHERE id = $4',
+        [
+          new Date(),
+          'failed',
+          error instanceof Error ? error.message : String(error),
+          repo.id
+        ]
+      );
+    }).catch(console.error);
+    
+    return {
+      success: false,
+      message: 'Unexpected error during documentation generation',
+      error: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    console.log(`${logId} Documentation generation process completed\n`);
+  }
+}
+
+export async function POST(req: Request) {
+  const { userId } = auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const { repo } = await req.json();
+    
+    return await withDatabase(async (db) => {
+      // First check if the repository already exists
+      const existingRepo = await db.query<{
+        id: string;
+        github_repo_id: number;
+        name: string;
+        full_name: string;
+        webhook_id?: string;
+        webhook_error?: string;
+      }>(
+        'SELECT id, github_repo_id, name, full_name, webhook_id, webhook_error FROM repos WHERE github_repo_id = $1',
+        [repo.id]
+      );
+
+      let savedRepo: {
+        id: string;
+        github_repo_id: number;
+        name: string;
+        full_name: string;
+        webhook_id?: string | null;
+        webhook_error?: string | null;
+      };
+      
+      if (existingRepo.rows.length > 0) {
+        // Update existing repository
+        const updateResult = await db.query<typeof savedRepo>(
+          `UPDATE repos SET 
+            name = $1,
+            full_name = $2,
+            html_url = $3,
+            clone_url = $4,
+            description = $5,
+            language = $6,
+            updated_at = $7,
+            doc_gen_status = 'pending',
+            last_error = NULL
+          WHERE id = $8
+          RETURNING *`,
+          [
+            repo.name,
+            repo.full_name,
+            repo.html_url,
+            repo.clone_url,
+            repo.description || '',
+            repo.language || '',
+            new Date(),
+            existingRepo.rows[0].id
+          ]
+        );
+        savedRepo = { ...existingRepo.rows[0], ...updateResult.rows[0] };
+      } else {
+        // Insert new repository
+        const result = await db.query<typeof savedRepo>(
+          `INSERT INTO repos 
+            (clerk_user_id, github_repo_id, name, full_name, html_url, 
+             clone_url, description, language, created_at, updated_at, doc_gen_status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+            RETURNING id, github_repo_id, name, full_name, webhook_id, webhook_error`,
+          [
+            userId,
+            repo.id,
+            repo.name,
+            repo.full_name,
+            repo.html_url,
+            repo.clone_url,
+            repo.description || '',
+            repo.language || '',
+            new Date(repo.created_at || new Date()),
+            new Date(repo.updated_at || new Date())
+          ]
+        );
+        savedRepo = result.rows[0];
+      }
+
+      // Create webhook if it doesn't exist and we have a full_name
+      if (!savedRepo.webhook_id && savedRepo.full_name) {
+        try {
+          // Get GitHub token
+          const tokensRes = await clerkClient.users.getUserOauthAccessToken(userId, "github");
+          const githubToken = tokensRes.data[0];
+
+          if (githubToken) {
+            // Create webhook
+            const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/webhook/github`;
+            
+            const webhookResponse = await fetch(
+              `https://api.github.com/repos/${savedRepo.full_name}/hooks`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `token ${githubToken.token}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  name: 'web',
+                  active: true,
+                  events: ['push', 'pull_request'],
+                  config: {
+                    url: webhookUrl,
+                    content_type: 'json',
+                    insecure_ssl: '0',
+                    secret: process.env.GITHUB_WEBHOOK_SECRET || 'your-secret-key'
+                  }
+                })
+              }
+            );
+
+            const webhookData = await webhookResponse.json();
+
+            if (!webhookResponse.ok) {
+              console.error('Webhook creation error:', webhookData);
+              // Update repo with webhook error
+              await db.query(
+                'UPDATE repos SET webhook_error = $1 WHERE id = $2',
+                [webhookData.message || 'Failed to create webhook', savedRepo.id]
+              );
+              
+              return NextResponse.json(
+                { 
+                  repo: { ...savedRepo, webhook_error: webhookData.message },
+                  warning: 'Repository saved, but webhook creation failed. ' + 
+                           (webhookData.message || 'Please check repository permissions.')
+                },
+                { status: 207 } // 207 Partial Content
+              );
+            }
+
+            // Update the repo with webhook ID
+            await db.query(
+              'UPDATE repos SET webhook_id = $1, webhook_error = NULL WHERE id = $2',
+              [webhookData.id, savedRepo.id]
+            );
+            
+            savedRepo.webhook_id = webhookData.id;
+            savedRepo.webhook_error = null;
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to create webhook';
+          console.error('Error creating webhook:', error);
+          
+          // Update repo with webhook error
+          await db.query(
+            'UPDATE repos SET webhook_error = $1 WHERE id = $2',
+            [errorMessage, savedRepo.id]
+          );
+          
+          return NextResponse.json(
+            { 
+              repo: { ...savedRepo, webhook_error: errorMessage },
+              warning: 'Repository saved, but webhook creation failed. ' + 
+                       (errorMessage || 'Please check your GitHub permissions.')
+            },
+            { status: 207 } // 207 Partial Content
+          );
+        }
+      }
+
+      // Trigger documentation generation in the background
+      triggerDocumentationGeneration(savedRepo).catch(console.error);
+
+      return NextResponse.json({ 
+        repo: savedRepo,
+        message: existingRepo.rows.length > 0 
+          ? 'Repository updated successfully' 
+          : 'Repository added successfully'
+      });
+    });
+  } catch (error) {
+    console.error('Error in repo selection:', error);
+    return NextResponse.json(
+      { 
+        error: error instanceof Error ? error.message : 'Failed to save repository',
+        details: process.env.NODE_ENV === 'development' && error instanceof Error ? error.stack : undefined
+      },
+      { status: 500 }
+    );
+  }
+}

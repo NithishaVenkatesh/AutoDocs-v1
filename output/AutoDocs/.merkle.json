@@ -1,0 +1,13 @@
+{
+  "merkleRoot": "3b2cb3598f5101e65eba963f7424a086de19ffc14c876ed91a5d5cef05195a4a",
+  "fileHashes": [
+    {
+      "path": "01_autodocs.md",
+      "hash": "69e4f74feb65f80500724de4e8ad30b99f10d5ab4b2ca104ce85615887dd1991"
+    },
+    {
+      "path": "index.md",
+      "hash": "47db814721e3e5bec8e97996a21110a5cfb3374c25db566c93873ed7ebc17a92"
+    }
+  ]
+}
