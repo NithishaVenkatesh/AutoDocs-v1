@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { MerkleTree } from './merkle-utils';
+import { DocumentationMerkleTree } from './merkle-tree';
 import { setGenerationStatus } from './documentation';
 
 const execAsync = promisify(exec);
@@ -212,8 +213,7 @@ export async function generateDocumentation(repoUrl: string): Promise<Documentat
       await fs.cp(finalOutputDir, repoOutputDir, { recursive: true, force: true });
       
       // Generate Merkle tree for the documentation
-      const merkleTree = new MerkleTree();
-      await merkleTree.buildTree(repoOutputDir, DEFAULT_EXCLUDE_PATTERNS);
+      const merkleTree = await DocumentationMerkleTree.fromDirectory(repoOutputDir, DEFAULT_EXCLUDE_PATTERNS);
       const merkleRoot = merkleTree.getRootHash();
       const fileHashes = merkleTree.getFileHashes();
       

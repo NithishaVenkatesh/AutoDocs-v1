@@ -109,8 +109,8 @@ export async function GET(
   }
 }
 
-// Helper function to update generation status
-export async function updateGenerationStatus(repoName: string, status: string, progress: number, message: string) {
+// Helper function to update generation status (not exported for API route compatibility)
+async function updateGenerationStatus(repoName: string, status: string, progress: number, message: string) {
   const client = new Client({ connectionString: process.env.DATABASE_URL });
 
   try {
@@ -134,8 +134,8 @@ export async function updateGenerationStatus(repoName: string, status: string, p
   }
 }
 
-// Helper function to mark repository as complete when documents exist
-export async function ensureRepositoryStatus(repoName: string) {
+// Helper function to mark repository as complete when documents exist (not exported for API route compatibility)
+async function ensureRepositoryStatus(repoName: string) {
   const client = new Client({ connectionString: process.env.DATABASE_URL });
 
   try {

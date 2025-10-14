@@ -295,13 +295,13 @@ async function triggerDocumentationGeneration(repo: any) {
     
     if (result.success) {
       console.log(`\n${logId} Documentation generated successfully in ${duration}s`);
-      console.log(`${logId} Merkle root: ${result.merkleRoot || 'N/A'}`);
-      if (result.fileHashes) {
+      console.log(`${logId} Merkle root: ${'merkleRoot' in result ? result.merkleRoot : 'N/A'}`);
+      if ('fileHashes' in result && Array.isArray(result.fileHashes) && result.fileHashes.length > 0) {
         console.log(`${logId} Files hashed: ${result.fileHashes.length}`);
       }
     } else {
       console.error(`\n${logId} Documentation generation failed after ${duration}s`);
-      console.error(`${logId} Error: ${result.error || 'Unknown error'}`);
+      console.error(`${logId} Error: ${'error' in result ? result.error : 'Unknown error'}`);
     }
     
     // Update the repository status in the database
@@ -454,10 +454,10 @@ export async function POST(req: Request) {
               if (result.success) {
                 console.log(`\n🎉 Successfully generated documentation for ${repo.full_name}`);
                 console.log(`   - Processed ${result.processedFiles} files`);
-                if (result.totalFiles) {
+                if ('totalFiles' in result && result.totalFiles) {
                   console.log(`   - Total files in repo: ${result.totalFiles}`);
                 }
-                if (result.timeTaken) {
+                if ('timeTaken' in result && result.timeTaken) {
                   console.log(`   - Time taken: ${result.timeTaken}`);
                 }
               } else {

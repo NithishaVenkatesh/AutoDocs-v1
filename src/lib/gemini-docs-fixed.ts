@@ -4,7 +4,7 @@ import { Client } from '@neondatabase/serverless';
 import { MerkleTree } from './merkle-utils';
 import { createHash } from 'crypto';
 import { sendSSEUpdate } from './sse';
-import { ensureRepositoryStatus } from '@/app/api/repos/[id]/status/route';
+import { ensureRepositoryStatus } from './repository-utils';
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');

@@ -321,8 +321,6 @@ async function handlePushEvent(data: any): Promise<Response> {
       });
       
       return NextResponse.json({
-        success: true,
-        message: `Processed ${result.updatedFiles} updated files`,
         duration: `${duration}ms`,
         ...result
       });

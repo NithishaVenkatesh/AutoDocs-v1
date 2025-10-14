@@ -220,17 +220,20 @@ export async function updateDocumentation(
       updatedFiles++;
     }
 
+    let finalMerkleRoot: string | undefined;
+
     if (chunkHashes.length > 0) {
       const { root: merkleRoot } = await generateMerkleRoot(chunkHashes);
       await db.query('UPDATE repositories SET merkle_root = $1, updated_at = NOW() WHERE id = $2', [merkleRoot, repoId]);
+      finalMerkleRoot = merkleRoot;
     }
 
     await db.query('COMMIT');
-    return { success: true, updatedFiles, totalChanges: fileChanges.length, message: `Updated ${updatedFiles} files` };
+    return { success: true, updatedFiles, totalChanges: fileChanges.length, message: `Updated ${updatedFiles} files`, merkleRoot: finalMerkleRoot };
 
   } catch (err) {
     await db.query('ROLLBACK');
-    return { success: false, updatedFiles: 0, totalChanges: fileChanges.length, message: err instanceof Error ? err.message : 'Unknown error' };
+    return { success: false, updatedFiles: 0, totalChanges: fileChanges.length, message: err instanceof Error ? err.message : 'Unknown error', merkleRoot: undefined };
   } finally {
     await db.end();
   }

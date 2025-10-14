@@ -26,8 +26,9 @@ export async function GET() {
     return NextResponse.json({ repos: result.rows });
   } catch (error) {
     console.error('Error fetching repositories:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch repositories';
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch repositories' },
+      { error: errorMessage },
       { status: 500 }
     );
   } finally {
