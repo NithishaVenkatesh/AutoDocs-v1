@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Turbopack is disabled by not including experimental.turbo
+  // Disable Turbopack to use stable Webpack
+  experimental: {
+    turbo: {},
+  },
   // Enable SWC minifier for better compatibility
   swcMinify: true,
 };
