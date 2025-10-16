@@ -27,7 +27,7 @@ async function createWebhooksForAllRepos() {
       ? `${process.env.PUBLIC_WEBHOOK_BASE_URL}/api/webhook`
       : (process.env.NEXT_PUBLIC_APP_URL 
         ? `${process.env.NEXT_PUBLIC_APP_URL}/api/webhook`
-        : 'http://localhost:3000/api/webhook');
+        : 'https://auto-docs-v1.vercel.app/api/webhook');
 
     console.log(`🔗 Webhook URL: ${webhookUrl}\n`);
 
