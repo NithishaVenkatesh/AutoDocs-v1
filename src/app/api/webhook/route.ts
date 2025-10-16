@@ -300,7 +300,7 @@ async function handlePushEvent(requestId: string, payload: any) {
     try {
       // Import the updateDocumentation function
       log.debug(requestId, '🔄 Importing updateDocumentation function');
-      const { updateDocumentation } = await import('@/lib/gemini-docs');
+      const { updateDocumentation } = await import('@/lib/gemini-docs-fixed');
       
       // Update documentation for changed files
       log.info(requestId, '📝 Generating documentation for changed files');
@@ -309,16 +309,14 @@ async function handlePushEvent(requestId: string, payload: any) {
       const result = await updateDocumentation(
         repoId,
         repoName,
-        fileChanges,
-        requestId
+        fileChanges
       );
       
       const duration = Date.now() - startTime;
       
       log.success(requestId, `🎉 Documentation update completed in ${duration}ms`, {
         updatedFiles: result.updatedFiles,
-        totalChanges: result.totalChanges,
-        merkleRoot: result.merkleRoot?.substring(0, 16) + '...'
+        totalChanges: result.totalChanges
       });
       
       // Send SSE update to notify frontend
@@ -336,8 +334,7 @@ async function handlePushEvent(requestId: string, payload: any) {
         message: `Processed ${result.updatedFiles} files`,
         duration: `${duration}ms`,
         updatedFiles: result.updatedFiles,
-        totalChanges: result.totalChanges,
-        merkleRoot: result.merkleRoot
+        totalChanges: result.totalChanges
       };
       
     } catch (error) {
